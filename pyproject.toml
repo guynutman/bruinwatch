@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bruinwatch"
+version = "1.0.0"
+description = "Real-time UCLA course seat availability monitor"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.28.0",
+    "colorama>=0.4.6",
+    "plyer>=2.1.0",
+]
+
+[project.scripts]
+bruinwatch = "bruinwatch.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["bruinwatch*"]
