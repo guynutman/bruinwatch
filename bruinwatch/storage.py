@@ -95,3 +95,29 @@ def remove_course(subject: str, course_number: str, term_cd: str) -> bool:
         return False
     save_watchlist(courses)
     return True
+
+
+# ─── Settings ────────────────────────────────────────────────────────────────
+
+_SETTINGS_PATH = Path(__file__).resolve().parent.parent / "settings.json"
+
+
+def load_settings() -> dict[str, Any]:
+    """Load settings.  Returns defaults if the file is missing."""
+    defaults: dict[str, Any] = {"notifications": True, "discuss_alerts": True}
+    if not _SETTINGS_PATH.exists():
+        return defaults
+    try:
+        with _SETTINGS_PATH.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return {**defaults, **data}
+    except Exception:
+        pass
+    return defaults
+
+
+def save_settings(settings: dict[str, Any]) -> None:
+    """Write *settings* to the settings file."""
+    with _SETTINGS_PATH.open("w", encoding="utf-8") as f:
+        json.dump(settings, f, indent=2, ensure_ascii=False)

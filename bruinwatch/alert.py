@@ -7,8 +7,9 @@ older Windows terminals.
 
 from __future__ import annotations
 
-import os
 import platform
+import subprocess
+from pathlib import Path
 from typing import Any
 
 from colorama import Fore, Style, init as colorama_init
@@ -21,26 +22,43 @@ try:
 except ImportError:
     _desktop_notify = None
 
+_SOUND_PATH = Path(__file__).resolve().parent / "sounds" / "sparkle.mp3"
+
 
 # ─── System sound ────────────────────────────────────────────────────────────
 
 def _play_sound() -> None:
-    """Play a platform-appropriate audible alert."""
-    system = platform.system()
-    if system == "Darwin":
-        os.system('say "Seat available in your course"')
-    elif system == "Windows":
-        try:
-            import winsound
-            winsound.Beep(1000, 1000)
-        except Exception:
+    """Play the bundled notification sound."""
+    try:
+        system = platform.system()
+        if system == "Windows":
+            # WPF MediaPlayer supports MP3 natively
+            ps = (
+                'Add-Type -AssemblyName presentationCore; '
+                '$p = New-Object System.Windows.Media.MediaPlayer; '
+                f'$p.Open("{_SOUND_PATH}"); '
+                '$p.Play(); '
+                'Start-Sleep -Seconds 3; '
+                '$p.Close()'
+            )
+            subprocess.Popen(
+                ["powershell", "-WindowStyle", "Hidden", "-Command", ps],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+        elif system == "Darwin":
+            subprocess.Popen(
+                ["afplay", str(_SOUND_PATH)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        elif system == "Linux":
+            subprocess.Popen(
+                ["mpg123", "-q", str(_SOUND_PATH)],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        else:
             print("\a")
-    elif system == "Linux":
-        os.system(
-            'paplay /usr/share/sounds/freedesktop/stereo/bell.oga '
-            '|| echo -e "\\a"'
-        )
-    else:
+    except Exception:
         print("\a")
 
 
@@ -88,7 +106,11 @@ def _format_row(
     return f"{color}{line}{Style.RESET_ALL}"
 
 
-def print_status_table(courses_data: list[dict[str, Any]]) -> None:
+def print_status_table(
+    courses_data: list[dict[str, Any]],
+    *,
+    show_discussions: bool = True,
+) -> None:
     """Print a color-coded status table for a list of course result dicts.
 
     Each item in *courses_data* must have keys:
@@ -118,14 +140,15 @@ def print_status_table(courses_data: list[dict[str, Any]]) -> None:
                 enrolled_str, lec["spots_left"], wl, color=color,
             ))
 
-            for dis in lec.get("discussions", []):
-                d_enrolled = f"{dis['enrolled']}/{dis['capacity']}"
-                d_wl = (
-                    f"{dis['waitlist_taken']}/{dis['waitlist_capacity']}"
-                    if dis["waitlist_capacity"] > 0 else "N/A"
-                )
-                d_color = Fore.GREEN if dis["spots_left"] > 0 else Fore.RED
-                print(_format_row(
-                    "  " + dis["section_label"], dis["status"],
-                    d_enrolled, dis["spots_left"], d_wl, color=d_color,
-                ))
+            if show_discussions:
+                for dis in lec.get("discussions", []):
+                    d_enrolled = f"{dis['enrolled']}/{dis['capacity']}"
+                    d_wl = (
+                        f"{dis['waitlist_taken']}/{dis['waitlist_capacity']}"
+                        if dis["waitlist_capacity"] > 0 else "N/A"
+                    )
+                    d_color = Fore.GREEN if dis["spots_left"] > 0 else Fore.RED
+                    print(_format_row(
+                        "  " + dis["section_label"], dis["status"],
+                        d_enrolled, dis["spots_left"], d_wl, color=d_color,
+                    ))

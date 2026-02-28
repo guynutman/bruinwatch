@@ -11,7 +11,10 @@ import argparse
 import sys
 
 from bruinwatch import __version__
-from bruinwatch.commands import cmd_add, cmd_list, cmd_remove, cmd_status, cmd_run
+from bruinwatch.commands import (
+    cmd_add, cmd_list, cmd_remove, cmd_status, cmd_run,
+    cmd_notifications, cmd_discussions,
+)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -44,6 +47,18 @@ def main(argv: list[str] | None = None) -> None:
         "status", help="Poll all watched courses once and display results",
     )
 
+    # ── bruinwatch notifications ──
+    subparsers.add_parser(
+        "notifications",
+        help="Toggle desktop + sound notifications on/off",
+    )
+
+    # ── bruinwatch discussions ──
+    subparsers.add_parser(
+        "discussions",
+        help="Toggle discussion/lab section alerts on/off",
+    )
+
     # ── bruinwatch run ──
     run_parser = subparsers.add_parser(
         "run",
@@ -72,6 +87,10 @@ def main(argv: list[str] | None = None) -> None:
             cmd_list()
         elif args.command == "status":
             cmd_status()
+        elif args.command == "notifications":
+            cmd_notifications()
+        elif args.command == "discussions":
+            cmd_discussions()
         elif args.command == "run":
             cmd_run(interval=args.interval)
     except KeyboardInterrupt:

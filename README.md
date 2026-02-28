@@ -6,13 +6,17 @@ BruinWatch is a command-line tool that monitors the [UCLA Schedule of Classes](h
 
 ## Features
 
-- **Five CLI commands** — `add`, `remove`, `list`, `status`, `run`
+- **Seven CLI commands** — `add`, `remove`, `list`, `status`, `notifications`, `discussions`, `run`
 - **Multi-course watchlist** — persisted to `watchlist.json`
 - **Lectures + discussions** — automatically fetches discussion/lab sections under each lecture
 - **Color-coded output** — green for open, red for full (via `colorama`)
 - **Desktop notifications** — push alerts via `plyer` (Windows, macOS, Linux)
-- **System sound alerts** — audible beep when a seat opens
+- **Custom notification sound** — plays a bundled sparkle chime when a seat opens
+- **Smart alerts** — only notifies on new openings (closed → open), not repeatedly
+- **Notification toggle** — turn desktop + sound alerts on/off with `bruinwatch notifications`
+- **Discussion toggle** — hide discussion rows and suppress discussion alerts with `bruinwatch discussions`
 - **Countdown timer** — live countdown between poll cycles
+- **Graceful exit** — press `q` to stop monitoring and continue using other commands, or `Ctrl+C` to exit
 - **Configurable interval** — `--interval` flag on `bruinwatch run`
 - **Auto-retry** — resilient to transient network errors (3 retries with 10s delay)
 - **No API key** — uses the same public endpoints as the SOC website
@@ -93,7 +97,28 @@ bruinwatch run
 bruinwatch run --interval 120    # poll every 2 minutes
 ```
 
-Polls all courses every 3 minutes (default) with a live countdown timer. Sends a desktop notification and plays a system sound when any seat opens.
+Polls all courses every 3 minutes (default) with a live countdown timer. Sends a desktop notification and plays a sound when a seat opens. Only alerts on **new** openings — if a section was already open last cycle, it won't re-alert.
+
+**Stopping the monitor:**
+
+- Press **`q`** during the countdown to stop monitoring and return to your terminal — you can then run other `bruinwatch` commands (e.g. `add`, `remove`, `list`).
+- Press **`Ctrl+C`** to exit the program entirely.
+
+### Toggle notifications
+
+```bash
+bruinwatch notifications
+```
+
+Toggle desktop notifications and sound alerts on or off. When off, `bruinwatch run` still polls and displays results in the terminal — just no popups or sounds.
+
+### Toggle discussion alerts
+
+```bash
+bruinwatch discussions
+```
+
+Toggle discussion/lab section visibility. When off, only lecture sections appear in the output and only lecture openings trigger notifications.
 
 ## Example Output
 
@@ -113,7 +138,7 @@ Polls all courses every 3 minutes (default) with a live countdown timer. Sends a
     Dis 1C           Open       4/60           56           0/10          ← green
     Dis 1D           Closed     0/0            0            N/A           ← red
 
-  Next poll in 02:58 …
+  Next poll in 02:58  (press 'q' to stop) …
 ```
 
 ## Project Structure
@@ -123,10 +148,12 @@ BruinWatch/
 ├── bruinwatch/
 │   ├── __init__.py      # Package version
 │   ├── api.py           # UCLA API client
-│   ├── storage.py       # Watchlist persistence (JSON)
+│   ├── storage.py       # Watchlist + settings persistence (JSON)
 │   ├── alert.py         # Color output, desktop notifications, sounds
-│   ├── commands.py      # Logic for add, remove, list, status, run
-│   └── cli.py           # Entry point, argparse routing
+│   ├── commands.py      # Logic for all CLI commands
+│   ├── cli.py           # Entry point, argparse routing
+│   └── sounds/
+│       └── sparkle.mp3  # Notification sound
 ├── .gitignore
 ├── LICENSE
 ├── requirements.txt
@@ -160,6 +187,8 @@ pip install -r requirements.txt
 pip install -e .
 bruinwatch add
 bruinwatch list
+bruinwatch notifications
+bruinwatch discussions
 bruinwatch status
 bruinwatch run
 ```

@@ -8,6 +8,7 @@ printed as friendly messages rather than tracebacks.
 
 from __future__ import annotations
 
+import platform
 import sys
 import time
 from datetime import datetime
@@ -23,8 +24,36 @@ from bruinwatch.api import (
     fetch_enrollment,
     get_course_summary,
 )
-from bruinwatch.storage import load_watchlist, add_course, remove_course
+from bruinwatch.storage import load_watchlist, add_course, remove_course, load_settings, save_settings
 from bruinwatch.alert import print_status_table, trigger_alert
+
+# ─── Key-press detection (cross-platform) ────────────────────────────────────
+
+if platform.system() == "Windows":
+    import msvcrt
+
+    def _key_pressed() -> str | None:
+        """Return the pressed key as a string, or ``None``."""
+        if msvcrt.kbhit():
+            return msvcrt.getch().decode("utf-8", errors="ignore").lower()
+        return None
+else:
+    import select
+    import tty
+    import termios
+
+    def _key_pressed() -> str | None:
+        """Return the pressed key as a string, or ``None``."""
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        try:
+            tty.setcbreak(fd)
+            rlist, _, _ = select.select([sys.stdin], [], [], 0)
+            if rlist:
+                return sys.stdin.read(1).lower()
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        return None
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -47,11 +76,22 @@ def _pick_term(session) -> tuple[str, str]:
 
 
 def _poll_watchlist(
-    session, watchlist: list[dict[str, Any]], *, alert: bool = False,
-) -> None:
+    session,
+    watchlist: list[dict[str, Any]],
+    *,
+    alert: bool = False,
+    discuss_alerts: bool = True,
+    show_discussions: bool = True,
+    prev_open: set[str] | None = None,
+) -> set[str]:
     """Fetch enrollment for every course and print a status table.
 
-    If *alert* is ``True``, fire desktop + audio alerts when seats are open.
+    If *alert* is ``True``, fire desktop + audio alerts only when a section
+    transitions from closed → open (i.e. not already in *prev_open*).
+    If *discuss_alerts* is ``False``, discussion openings won't trigger alerts.
+
+    Returns the set of section keys that are currently open, so the caller
+    can pass it back on the next cycle.
     """
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"\n{'═' * 72}")
@@ -59,7 +99,9 @@ def _poll_watchlist(
     print(f"{'═' * 72}")
 
     results: list[dict[str, Any]] = []
-    alerted = False
+    currently_open: set[str] = set()
+    if prev_open is None:
+        prev_open = set()
 
     for entry in watchlist:
         try:
@@ -76,31 +118,33 @@ def _poll_watchlist(
         }
         results.append(result)
 
-        # Fire alert for the first open seat found (once per poll cycle)
-        if alert and not alerted:
-            for lec in sections:
-                if lec["spots_left"] > 0:
+        course_label = f"{entry['subject']} {entry['course_number']}"
+
+        for lec in sections:
+            lec_key = f"{course_label}|{lec['section_label']}"
+            if lec["spots_left"] > 0:
+                currently_open.add(lec_key)
+                if alert and lec_key not in prev_open:
                     trigger_alert(
-                        f"{entry['subject']} {entry['course_number']} — {entry['course_title']}",
+                        f"{course_label} — {entry['course_title']}",
                         lec["spots_left"],
                         lec["section_label"],
                     )
-                    alerted = True
-                    break
-                for dis in lec.get("discussions", []):
-                    if dis["spots_left"] > 0:
+            for dis in lec.get("discussions", []):
+                dis_key = f"{course_label}|{lec['section_label']}>{dis['section_label']}"
+                if dis["spots_left"] > 0:
+                    currently_open.add(dis_key)
+                    if alert and discuss_alerts and dis_key not in prev_open:
                         trigger_alert(
-                            f"{entry['subject']} {entry['course_number']} — {entry['course_title']}",
+                            f"{course_label} — {entry['course_title']}",
                             dis["spots_left"],
                             f"{lec['section_label']} > {dis['section_label']}",
                         )
-                        alerted = True
-                        break
-                if alerted:
-                    break
 
     if results:
-        print_status_table(results)
+        print_status_table(results, show_discussions=show_discussions)
+
+    return currently_open
 
 
 # ─── Commands ────────────────────────────────────────────────────────────────
@@ -238,7 +282,42 @@ def cmd_status() -> None:
         sys.exit(1)
 
     session = create_session()
-    _poll_watchlist(session, watchlist, alert=False)
+    discuss = load_settings().get("discuss_alerts", True)
+    _poll_watchlist(session, watchlist, show_discussions=discuss)
+
+
+def cmd_notifications() -> None:
+    """``bruinwatch notifications`` — toggle notifications on/off."""
+    settings = load_settings()
+    current = settings.get("notifications", True)
+    status_str = f"{Fore.GREEN}ON{Style.RESET_ALL}" if current else f"{Fore.RED}OFF{Style.RESET_ALL}"
+    print(f"\n  Notifications are currently: {status_str}")
+    print(f"  (Desktop alerts + sound)\n")
+    choice = input("  Toggle notifications? (y/n) [n]: ").strip().lower()
+    if choice == "y":
+        settings["notifications"] = not current
+        save_settings(settings)
+        new_str = f"{Fore.GREEN}ON{Style.RESET_ALL}" if settings["notifications"] else f"{Fore.RED}OFF{Style.RESET_ALL}"
+        print(f"  Notifications set to: {new_str}")
+    else:
+        print("  No changes made.")
+
+
+def cmd_discussions() -> None:
+    """``bruinwatch discussions`` — toggle discussion alerts on/off."""
+    settings = load_settings()
+    current = settings.get("discuss_alerts", True)
+    status_str = f"{Fore.GREEN}ON{Style.RESET_ALL}" if current else f"{Fore.RED}OFF{Style.RESET_ALL}"
+    print(f"\n  Discussion alerts are currently: {status_str}")
+    print(f"  When OFF, only lecture openings trigger notifications.\n")
+    choice = input("  Toggle discussion alerts? (y/n) [n]: ").strip().lower()
+    if choice == "y":
+        settings["discuss_alerts"] = not current
+        save_settings(settings)
+        new_str = f"{Fore.GREEN}ON{Style.RESET_ALL}" if settings["discuss_alerts"] else f"{Fore.RED}OFF{Style.RESET_ALL}"
+        print(f"  Discussion alerts set to: {new_str}")
+    else:
+        print("  No changes made.")
 
 
 def cmd_run(interval: int = 180) -> None:
@@ -248,33 +327,54 @@ def cmd_run(interval: int = 180) -> None:
         print("\nYour watchlist is empty. Add courses first with `bruinwatch add`.")
         sys.exit(1)
 
+    settings = load_settings()
+    notify = settings.get("notifications", True)
+    discuss = settings.get("discuss_alerts", True)
+
     print("=" * 60)
     print("  BruinWatch — UCLA Course Seat Availability Monitor")
     print("=" * 60)
     print(f"\n  Monitoring {len(watchlist)} course(s):")
     for entry in watchlist:
         print(f"    • {entry['subject']} {entry['course_number']} — {entry['course_title']}")
-    print(f"  Polling every {interval} seconds.  Press Ctrl+C to stop.")
+    notif_str = f"{Fore.GREEN}ON{Style.RESET_ALL}" if notify else f"{Fore.RED}OFF{Style.RESET_ALL}"
+    disc_str = f"{Fore.GREEN}ON{Style.RESET_ALL}" if discuss else f"{Fore.RED}OFF{Style.RESET_ALL}"
+    print(f"  Notifications: {notif_str}  |  Discussion alerts: {disc_str}")
+    print(f"  Polling every {interval} seconds.")
+    print(f"  Press 'q' to stop monitoring  |  Ctrl+C to exit")
     print(f"{'─' * 60}")
 
     session = create_session()
+    prev_open: set[str] = set()
 
     try:
         while True:
-            _poll_watchlist(session, watchlist, alert=True)
+            prev_open = _poll_watchlist(
+                session, watchlist,
+                alert=notify, discuss_alerts=discuss,
+                show_discussions=discuss, prev_open=prev_open,
+            )
 
-            # Countdown to next poll
+            # Countdown to next poll — check for 'q' each second
+            stopped = False
             for remaining in range(interval, 0, -1):
                 mins, secs = divmod(remaining, 60)
                 print(
-                    f"\r  Next poll in {mins:02d}:{secs:02d} …",
+                    f"\r  Next poll in {mins:02d}:{secs:02d}  (press 'q' to stop) …",
                     end="", flush=True,
                 )
                 time.sleep(1)
-            print("\r" + " " * 40 + "\r", end="")  # clear countdown line
+                key = _key_pressed()
+                if key == "q":
+                    stopped = True
+                    break
+            print("\r" + " " * 50 + "\r", end="")  # clear countdown line
+
+            if stopped:
+                break
 
     except KeyboardInterrupt:
-        print(f"\n\n{'─' * 60}")
-        print("  BruinWatch stopped. Good luck with enrollment!")
-        print(f"{'─' * 60}")
+        pass
 
+    print(f"\n{'─' * 60}")
+    print("  BruinWatch stopped. Good luck with enrollment!")

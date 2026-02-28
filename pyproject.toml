@@ -19,3 +19,6 @@ bruinwatch = "bruinwatch.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["bruinwatch*"]
+
+[tool.setuptools.package-data]
+bruinwatch = ["sounds/*"]
