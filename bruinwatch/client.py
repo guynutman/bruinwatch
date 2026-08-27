@@ -35,16 +35,15 @@ DEFAULT_HEADERS = {
     "Referer": SOC_URL,
 }
 
-# Leading digits of a catalog number, which UCLA zero-pads to four:
-#     "32" -> "0032", "131" -> "0131", "M51A" -> "M51A" (no leading digits)
-CATALOG_NUMBER_RE = re.compile(r"^(?P<digits>\d+)(?P<suffix>.*)$")
-
-
-# UCLA fronts SOC with an F5 WAF that answers suspicious sessions with a
-# JavaScript challenge page instead of results. It carries no course data,
-# so parsing it yields zero sections -- indistinguishable from a course that
-# does not exist unless we detect it here.
-BOT_CHALLENGE_MARKERS = ("f5_cspm", "bobcmn")
+# A catalog number as a student writes it: an optional leading letter
+# (M for multiple-listed, C for concurrent), the digits, and an optional
+# trailing letter. UCLA stores these with the digits zero-padded to four
+# and the LEADING letter moved to the end after a space:
+#     "32"    -> "0032"
+#     "35L"   -> "0035L"
+#     "M51A"  -> "0051A M"     <- the M moves to the back
+#     "C121"  -> "0121 C"
+CATALOG_NUMBER_RE = re.compile(r"^(?P<prefix>[A-Z]?)(?P<digits>\d+)(?P<suffix>[A-Z]*)$")
 
 
 class SOCError(Exception):
@@ -56,38 +55,28 @@ class SOCError(Exception):
     """
 
 
-class BotChallengeError(SOCError):
-    """UCLA served a bot-detection challenge instead of the page we asked for.
-
-    A subclass of SOCError so existing handlers keep working, but distinct
-    so callers can tell "slow down" apart from "the site is unreachable".
-    """
-
-
-def _is_bot_challenge(html: str) -> bool:
-    """True if this response is the WAF's challenge page rather than content.
-
-    The challenge is short and carries an F5 fingerprint, so both are
-    checked: real SOC fragments are larger and never contain these markers.
-    """
-    return len(html) < 4000 and any(m in html for m in BOT_CHALLENGE_MARKERS)
-
-
 def format_catalog_number(catalog_number: str) -> str:
-    """Zero-pad a catalog number the way UCLA's API expects.
+    """Rewrite a catalog number the way UCLA's API expects.
 
-        "32" -> "0032", "33A" -> "0033A", "M51A" -> "M51A"
+        "32"   -> "0032"
+        "33A"  -> "0033A"
+        "M51A" -> "0051A M"    (leading letters move to the end)
+        "C121" -> "0121 C"
 
     Lives here rather than in models because it is an API formatting
-    concern: the user types "111" and that is what Course stores.
+    concern: the user types "M51A" and that is what Course stores.
     """
     normalized = catalog_number.strip().upper()
 
     match = CATALOG_NUMBER_RE.match(normalized)
     if match is None:
+        # Not a shape we recognise; hand it over untouched rather than
+        # mangling it, and let UCLA decide whether it resolves.
         return normalized
 
-    return match.group("digits").zfill(4) + match.group("suffix")
+    padded = match.group("digits").zfill(4) + match.group("suffix")
+    prefix = match.group("prefix")
+    return f"{padded} {prefix}" if prefix else padded
 
 
 class SOCClient:
@@ -169,19 +158,7 @@ class SOCClient:
                 response = self._session.get(url, params=params, timeout=self._timeout)
                 response.raise_for_status()
 
-                # A challenge page arrives as a normal 200, so it has to be
-                # caught here rather than by raise_for_status.
-                if _is_bot_challenge(response.text):
-                    raise BotChallengeError(
-                        "UCLA served a bot-detection challenge. Wait a minute "
-                        "and try again, or poll less frequently."
-                    )
-
                 return response.text
-            except BotChallengeError:
-                # Retrying immediately would only deepen the block; the
-                # caller needs to back off, so report it straight away.
-                raise
             except requests.RequestException as exc:
                 last_error = exc
                 # Sleep between attempts, never after the last one.

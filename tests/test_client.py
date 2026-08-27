@@ -86,14 +86,28 @@ def fake_session():
         ("33A", "0033A"),
         ("1", "0001"),
         ("0111", "0111"),  # already padded -- idempotent
-        ("M51A", "M51A"),  # leading letter -- never padded
-        ("CM121", "CM121"),
-        ("m51a", "M51A"),  # normalised to upper
+        # Leading letters (M = multiple-listed, C = concurrent) move to the
+        # END in UCLA's internal format, after the zero-padded digits.
+        ("M51A", "0051A M"),
+        ("M16", "0016 M"),
+        ("C121", "0121 C"),
+        ("M151B", "0151B M"),
+        ("m51a", "0051A M"),  # normalised to upper
+        ("CM121", "CM121"),  # unrecognised shape -- passed through
         ("  32  ", "0032"),  # normalised whitespace
     ],
 )
 def test_format_catalog_number(raw, expected):
     assert format_catalog_number(raw) == expected
+
+
+def test_leading_letter_becomes_a_trailing_suffix():
+    """UCLA stores M51A as "0051A M" -- the M moves, it is not a prefix.
+
+    Getting this wrong made every M- and C-prefixed course report as "not
+    found", which is indistinguishable from a course that is not offered.
+    """
+    assert format_catalog_number("M51A") == "0051A M"
 
 
 def test_format_catalog_number_is_idempotent():
@@ -177,7 +191,7 @@ def test_fetch_course_titles_normalises_the_subject_area(fake_session):
 
     model = json.loads(fake_session.calls[-1][1]["model"])
     assert model["subj_area_cd"] == "COM SCI"
-    assert model["crs_catlg_no"] == "M51A"
+    assert model["crs_catlg_no"] == "0051A M"
 
 
 # --- fetch_course_summary ----------------------------------------------------
