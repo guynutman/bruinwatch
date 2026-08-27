@@ -24,16 +24,16 @@ from bruinwatch.models import Course, CourseSnapshot, SectionKind, SectionStatus
 
 def make_section(**overrides) -> SectionStatus:
     """Build a SectionStatus with open-section defaults."""
-    defaults = dict(
-        section_id="1",
-        label="Lec 1",
-        kind=SectionKind.LECTURE,
-        enrolled=10,
-        capacity=100,
-        waitlisted=0,
-        waitlist_capacity=None,
-        status_text="Open",
-    )
+    defaults = {
+        "section_id": "1",
+        "label": "Lec 1",
+        "kind": SectionKind.LECTURE,
+        "enrolled": 10,
+        "capacity": 100,
+        "waitlisted": 0,
+        "waitlist_capacity": None,
+        "status_text": "Open",
+    }
     return SectionStatus(**{**defaults, **overrides})
 
 

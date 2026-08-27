@@ -1,0 +1,36 @@
+[project]
+name = "bruinwatch"
+version = "0.1.0"
+description = "Monitors UCLA's Schedule of Classes for open seats."
+requires-python = ">=3.10"
+dependencies = ["requests>=2.31.0"]
+
+[project.optional-dependencies]
+notify = ["plyer>=2.1"]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+bruinwatch = "bruinwatch.bruinwatch:main"
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "SIM", "C4", "UP", "DTZ", "S"]
+# DTZ: every timestamp here is a local wall-clock time shown in the user's
+# own terminal, never stored, compared across zones, or serialised. Naive
+# datetimes are the correct choice for that, so the tz warnings are noise.
+ignore = [
+    "DTZ005",
+    "DTZ001",
+    # S607: the sound players are looked up on PATH deliberately -- their
+    # location varies across distributions, and a missing one already falls
+    # through to the terminal bell.
+    "S607",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]   # assert is the point of a test file
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

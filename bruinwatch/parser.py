@@ -15,7 +15,8 @@ from bruinwatch.models import SectionKind, SectionStatus
 
 # Term options on the SOC landing page. The value is a term code (two digits
 # plus a letter or digit); the element text is the human-readable name:
-#     <option class="select_term" value="26F" data-yearText="Fall 2026">Fall 2026</option>
+#     <option class="select_term" value="26F"
+#             data-yearText="Fall 2026">Fall 2026</option>
 # [^>]* absorbs any extra attributes -- the current term carries selected="selected".
 TERM_OPTION_RE = re.compile(
     r'<option[^>]*\bvalue="(?P<code>\d{2}[A-Z0-9])"[^>]*>(?P<name>[^<]+)</option>'
@@ -29,7 +30,8 @@ COURSE_DATA_RE = re.compile(r'AddToCourseData\("[^"]+",(\{[^}]+\})\)')
 
 # Course title, rendered as a collapsible button on CourseTitlesView:
 #     <button class="linkLikeButton" id="COMSCI0111-title" type="button"
-#             aria-controls="COMSCI0111-container" ...>111 - Operating Systems Principles</button>
+#             aria-controls="COMSCI0111-container" ...>
+#       111 - Operating Systems Principles</button>
 # Anchored on the id suffix rather than the class, since -title names the
 # element's role while class names are styling and change more freely.
 COURSE_TITLE_RE = re.compile(
@@ -38,7 +40,8 @@ COURSE_TITLE_RE = re.compile(
 
 # Section label, in the anchor text of the -section div:
 #     <div class="cls-section click_info" id="187336201_187336200_COMSCI0111-section">
-#       <p class="hide-small"><a href="...class_id=187336201...">Lab 1A</a></p>
+#       <p class="hide-small">
+#         <a href="...class_id=187336201...">Lab 1A</a></p>
 # Sub-level ids nest as {section}_{parent}_{course}, so anchoring the capture
 # to the LEADING digits yields the section's own id at both levels.
 SECTION_LABEL_RE = re.compile(
@@ -48,7 +51,8 @@ SECTION_LABEL_RE = re.compile(
 
 # Enrollment status, one <p> holding <br />-delimited fields:
 #     <div class="statusColumn" id="187336201_..._COMSCI0111-status_data">
-#       <p><i class="icon-unlock" ...></i>Open<br />52 of 60 Enrolled<br />8 Spots Left</p>
+#       <p><i class="icon-unlock" ...></i>Open<br />52 of 60 Enrolled
+#          <br />8 Spots Left</p>
 STATUS_BLOCK_RE = re.compile(
     r'id="(?P<sid>\d+)_[^"]*-status_data"[^>]*>\s*<p>(?P<body>.*?)</p>',
     re.DOTALL,
