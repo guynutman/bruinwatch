@@ -40,6 +40,13 @@ DEFAULT_HEADERS = {
 CATALOG_NUMBER_RE = re.compile(r"^(?P<digits>\d+)(?P<suffix>.*)$")
 
 
+# UCLA fronts SOC with an F5 WAF that answers suspicious sessions with a
+# JavaScript challenge page instead of results. It carries no course data,
+# so parsing it yields zero sections -- indistinguishable from a course that
+# does not exist unless we detect it here.
+BOT_CHALLENGE_MARKERS = ("f5_cspm", "bobcmn")
+
+
 class SOCError(Exception):
     """A request to UCLA's SOC failed after exhausting retries.
 
@@ -47,6 +54,23 @@ class SOCError(Exception):
     requests: watcher.py should not need to know that this module
     speaks HTTP. The underlying error is kept as __cause__.
     """
+
+
+class BotChallengeError(SOCError):
+    """UCLA served a bot-detection challenge instead of the page we asked for.
+
+    A subclass of SOCError so existing handlers keep working, but distinct
+    so callers can tell "slow down" apart from "the site is unreachable".
+    """
+
+
+def _is_bot_challenge(html: str) -> bool:
+    """True if this response is the WAF's challenge page rather than content.
+
+    The challenge is short and carries an F5 fingerprint, so both are
+    checked: real SOC fragments are larger and never contain these markers.
+    """
+    return len(html) < 4000 and any(m in html for m in BOT_CHALLENGE_MARKERS)
 
 
 def format_catalog_number(catalog_number: str) -> str:
@@ -144,7 +168,20 @@ class SOCClient:
             try:
                 response = self._session.get(url, params=params, timeout=self._timeout)
                 response.raise_for_status()
+
+                # A challenge page arrives as a normal 200, so it has to be
+                # caught here rather than by raise_for_status.
+                if _is_bot_challenge(response.text):
+                    raise BotChallengeError(
+                        "UCLA served a bot-detection challenge. Wait a minute "
+                        "and try again, or poll less frequently."
+                    )
+
                 return response.text
+            except BotChallengeError:
+                # Retrying immediately would only deepen the block; the
+                # caller needs to back off, so report it straight away.
+                raise
             except requests.RequestException as exc:
                 last_error = exc
                 # Sleep between attempts, never after the last one.

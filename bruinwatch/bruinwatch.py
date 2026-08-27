@@ -13,16 +13,48 @@ import contextlib
 import platform
 import subprocess
 import sys
+import warnings
 
 from bruinwatch import parser
 from bruinwatch.client import SOCClient, SOCError
-from bruinwatch.models import Course
-from bruinwatch.watcher import DEFAULT_POLL_INTERVAL, NotifyCallback, Watcher
+from bruinwatch.models import Course, CourseSnapshot
+from bruinwatch.watcher import (
+    DEFAULT_POLL_INTERVAL,
+    NotifyCallback,
+    ReportCallback,
+    Watcher,
+)
 
 try:
+    # plyer warns once per call when dbus or notify-send is missing (common
+    # under WSL and bare containers). The printed alert is the reliable
+    # channel, so the noise is suppressed rather than shown every poll.
+    warnings.filterwarnings("ignore", module="plyer")
     from plyer import notification as desktop_notify
 except ImportError:  # optional dependency -- degrade to sound only
     desktop_notify = None
+
+# ANSI colours. Windows terminals need a nudge before they honour these,
+# and anything piped to a file should not be littered with escape codes.
+if platform.system() == "Windows":  # pragma: no cover - platform specific
+    # Older Windows consoles ignore ANSI codes until VT100 processing is
+    # switched on explicitly.
+    with contextlib.suppress(Exception):
+        import ctypes
+
+        kernel32 = ctypes.windll.kernel32
+        kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+
+_USE_COLOUR = sys.stdout.isatty()
+GREEN = "\033[92m" if _USE_COLOUR else ""
+RED = "\033[91m" if _USE_COLOUR else ""
+DIM = "\033[2m" if _USE_COLOUR else ""
+RESET = "\033[0m" if _USE_COLOUR else ""
+
+
+def colour(text: str, code: str) -> str:
+    """Wrap text in an ANSI colour, or return it unchanged when piped."""
+    return f"{code}{text}{RESET}" if code else text
 
 
 def build_notify_callback() -> NotifyCallback:
@@ -67,7 +99,7 @@ def build_notify_callback() -> NotifyCallback:
 
     def notify(course_name: str, seats: int, section_label: str) -> None:
         message = f"{section_label}: {seats} seat(s) open"
-        print(f"  >>> {course_name} - {message}")
+        print(colour(f"  >>> {course_name} - {message}", GREEN))
 
         if desktop_notify is not None:
             # Notification is a best-effort side channel and plyer raises
@@ -85,6 +117,38 @@ def build_notify_callback() -> NotifyCallback:
         play_sound()
 
     return notify
+
+
+def build_report_callback() -> ReportCallback:
+    """Build the per-poll status table renderer.
+
+    Open sections are green and full ones red, so the state of a whole
+    watchlist is readable at a glance rather than only when it changes.
+    """
+
+    def report(snapshot: CourseSnapshot) -> None:
+        heading = f"{snapshot.course.display_name} - {snapshot.course.title or ''}"
+        print(f"\n  {heading.strip(' -')}")
+
+        if not snapshot.sections:
+            print(colour("    (no sections returned)", DIM))
+            return
+
+        for section in snapshot.sections:
+            seats = section.seats_available
+            enrolled = f"{section.enrolled}/{section.capacity}"
+            waitlist = (
+                f"{section.waitlisted}/{section.waitlist_capacity}"
+                if section.waitlist_capacity
+                else "-"
+            )
+            line = (
+                f"    {section.label:<10} {section.status_text:<12} "
+                f"{enrolled:>9} enrolled  {seats:>3} open  wl {waitlist}"
+            )
+            print(colour(line, GREEN if section.is_open else RED))
+
+    return report
 
 
 def choose_term(client: SOCClient) -> tuple[str, str]:
@@ -201,7 +265,12 @@ def main() -> None:
     print("  Press Ctrl+C to stop.")
     print(f"{'-' * 60}")
 
-    Watcher(client, courses, notify=build_notify_callback()).run()
+    Watcher(
+        client,
+        courses,
+        notify=build_notify_callback(),
+        report=build_report_callback(),
+    ).run()
 
 
 if __name__ == "__main__":

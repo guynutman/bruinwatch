@@ -24,6 +24,11 @@ DEFAULT_POLL_INTERVAL = 180
 # Args: course display name, seats available, section label.
 NotifyCallback = Callable[[str, int, str], None]
 
+# Called once per course per poll with the full snapshot, so a caller can
+# render current state. Separate from NotifyCallback because the two answer
+# different questions: "what changed?" versus "what is true right now?".
+ReportCallback = Callable[[CourseSnapshot], None]
+
 
 class Watcher:
     """Polls courses and reports sections that have newly opened.
@@ -38,6 +43,7 @@ class Watcher:
         courses: list[Course],
         notify: NotifyCallback | None = None,
         poll_interval: int = DEFAULT_POLL_INTERVAL,
+        report: ReportCallback | None = None,
     ) -> None:
         """Store dependencies and start with no previous state.
 
@@ -48,6 +54,7 @@ class Watcher:
         self._courses = courses
         self._notify = notify
         self._poll_interval = poll_interval
+        self._report = report
 
         # section_id -> was it open last poll? Empty on the first cycle, so
         # every open section counts as newly open and alerts once.
@@ -70,6 +77,9 @@ class Watcher:
                 continue
 
             snapshots.append(snapshot)
+
+            if self._report is not None:
+                self._report(snapshot)
 
             for section in self._newly_open(snapshot):
                 if self._notify is not None:
