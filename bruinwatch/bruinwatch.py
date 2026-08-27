@@ -199,7 +199,7 @@ def choose_courses(client: SOCClient, term_cd: str) -> list[Course]:
             courses.append(course)
             print(f"  Added: {course.display_name} - {course.title}")
 
-        if input("\nWatch another course? [y/N]: ").strip().lower() != "y":
+        if input("\nWatch another course? (y/n): ").strip().lower() != "y":
             break
 
     if not courses:
@@ -262,7 +262,7 @@ def main() -> None:
     print(f"  Monitoring {len(courses)} course(s), every {minutes} minute(s).")
     for course in courses:
         print(f"    - {course.display_name}: {course.title}")
-    print("  Press Ctrl+C to stop.")
+    print(colour("  Press Ctrl+C at any time to stop monitoring.", DIM))
     print(f"{'-' * 60}")
 
     Watcher(
