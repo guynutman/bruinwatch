@@ -1,0 +1,2 @@
+[console_scripts]
+bruinwatch = bruinwatch.bruinwatch:main

@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: bruinwatch
+Version: 0.1.0
+Summary: Monitors UCLA's Schedule of Classes for open seats.
+Requires-Python: >=3.10
+Requires-Dist: requests>=2.31.0
+Provides-Extra: notify
+Requires-Dist: plyer>=2.1; extra == "notify"
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: ruff>=0.6; extra == "dev"
