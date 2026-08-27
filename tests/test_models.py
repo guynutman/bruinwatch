@@ -90,9 +90,9 @@ def test_is_open_false_when_closed_despite_free_seats():
     "status_text",
     [
         "Closed",
-        "Closed by Petition",       # exercises startswith(), not ==
-        "CLOSED",                   # exercises casefold()
-        " Cancelled ",              # exercises strip()
+        "Closed by Petition",  # exercises startswith(), not ==
+        "CLOSED",  # exercises casefold()
+        " Cancelled ",  # exercises strip()
         "Cancelled",
     ],
 )
