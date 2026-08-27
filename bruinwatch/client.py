@@ -48,6 +48,13 @@ def format_catalog_number(catalog_number: str) -> str:
     Lives here rather than in models because it is an API formatting
     concern: the user types "111" and that is what Course stores.
     """
+    normalized = catalog_number.strip().upper()
+
+    match = CATALOG_NUMBER_RE.match(normalized)
+    if match is None:
+        return normalized
+
+    return match.group("digits").zfill(4) + match.group("suffix")
 
 
 class SOCClient:
@@ -63,12 +70,20 @@ class SOCClient:
 
         Raises requests.RequestException if the landing page is unreachable.
         """
+        self._timeout = timeout
+        self._session = requests.Session()
+        self._session.headers.update(DEFAULT_HEADERS)
+
+        # SOC sets session state here and rejects the Results endpoints
+        # without it, so this request exists purely to collect cookies.
+        self._session.get(SOC_URL, timeout=timeout).raise_for_status()
 
     def fetch_terms_page(self) -> str:
         """GET the SOC landing page. Returns raw HTML.
 
         Raises requests.RequestException if all retries fail.
         """
+        return self._get_with_retry(SOC_URL, {})
 
     def fetch_course_titles(
         self, term_cd: str, subject_area: str, catalog_number: str
@@ -78,6 +93,22 @@ class SOCClient:
         Zero-pads the catalog number internally, so callers pass what the
         user typed. Raises requests.RequestException if all retries fail.
         """
+        model = {
+            "term_cd": term_cd,
+            "subj_area_cd": subject_area.strip().upper(),
+            "ses_grp_cd": "%",  # wildcard: any session group
+            "class_no": "%",  # wildcard: any class number
+            "crs_catlg_no": format_catalog_number(catalog_number),
+        }
+        return self._get_with_retry(
+            COURSE_TITLES_URL,
+            {
+                "search_by": "subject",
+                "model": json.dumps(model),
+                "pageNumber": "1",
+                "filterFlags": "{}",
+            },
+        )
 
     def fetch_course_summary(self, model_token: dict) -> str:
         """Call GetCourseSummary with a token from CourseTitlesView.
@@ -86,6 +117,9 @@ class SOCClient:
         root tokens (lectures) and sub tokens (discussions/labs). Returns
         raw HTML. Raises requests.RequestException if all retries fail.
         """
+        return self._get_with_retry(
+            COURSE_SUMMARY_URL, {"model": json.dumps(model_token), "FilterFlags": "{}"}
+        )
 
     def _get_with_retry(self, url: str, params: dict) -> str:
         """GET with retries, returning response text.
@@ -95,3 +129,18 @@ class SOCClient:
         once MAX_RETRIES attempts are exhausted -- failing loudly beats
         returning empty HTML that would parse as "no sections".
         """
+        last_error: requests.RequestException | None = None
+
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                response = self._session.get(url, params=params, timeout=self._timeout)
+                response.raise_for_status()
+                return response.text
+            except requests.RequestException as exc:
+                last_error = exc
+                # Sleep between attempts, never after the last one.
+                if attempt < MAX_RETRIES:
+                    time.sleep(RETRY_DELAY)
+
+        assert last_error is not None
+        raise last_error
