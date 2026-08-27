@@ -21,6 +21,13 @@ TERM_OPTION_RE = re.compile(
     r'<option[^>]*\bvalue="(?P<code>\d{2}[A-Z0-9])"[^>]*>(?P<name>[^<]+)</option>'
 )
 
+# Course data tokens, embedded as JavaScript calls inside <script> blocks:
+#     Iwe_ClassSearch_SearchResults.AddToCourseData("COMSCI0111",{"Term":"26F",...})
+# The captured group is the JSON object literal. [^}]+ stops at the first
+# closing brace, which is safe here because these objects are never nested.
+COURSE_DATA_RE = re.compile(r'AddToCourseData\("[^"]+",(\{[^}]+\})\)')
+
+
 def parse_course_title(html: str) -> str | None:
     """Extract the course title from CourseTitlesView HTML.
 
@@ -34,6 +41,7 @@ def parse_model_tokens(html: str) -> list[dict]:
     These opaque tokens are what GetCourseSummary requires. Only entries
     with IsRoot true.
     """
+    return _parse_course_data(html, is_root=True)
 
 
 def parse_sub_tokens(html: str) -> list[dict]:
@@ -41,19 +49,34 @@ def parse_sub_tokens(html: str) -> list[dict]:
 
     Tokens for fetching the discussion/lab sub-level.
     """
+    return _parse_course_data(html, is_root=False)
+
+
+def _parse_course_data(html: str, *, is_root: bool) -> list[dict]:
+    """Shared helper: extract AddToCourseData tokens, filtered by IsRoot.
+
+    Tokens are opaque -- they are handed back to UCLA verbatim, never
+    constructed by us. A token whose JSON fails to parse is skipped rather
+    than aborting the whole page: one malformed entry should not cost us
+    the others.
+    """
+    tokens: list[dict] = []
+
+    for match in COURSE_DATA_RE.finditer(html):
+        try:
+            token = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            continue
+        if bool(token.get("IsRoot")) is is_root:
+            tokens.append(token)
+
+    return tokens
 
 
 def parse_sections(html: str) -> list[SectionStatus]:
     """Parse enrollment data from GetCourseSummary HTML.
 
     The core parser. Returns [] if the HTML contains no sections.
-    """
-
-
-def parse_available_terms(html: str) -> list[tuple[str, str]]:
-    """(term_code, term_name) pairs from the SOC landing page.
-
-    e.g. [("26F", "Fall 2026"), ("26S", "Spring 2026")]
     """
 
 
