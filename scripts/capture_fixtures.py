@@ -99,8 +99,9 @@ def capture_landing(session: requests.Session) -> None:
     save("soc_landing_sample.html", fetch(session, SOC_URL, {}))
 
 
-def capture_titles(session: requests.Session, term: str, subject: str,
-                   catalog_no: str) -> dict:
+def capture_titles(
+    session: requests.Session, term: str, subject: str, catalog_no: str
+) -> dict:
     """CourseTitlesView -- course title plus the root model token.
 
     Returns the root token, which GetCourseSummary requires.
@@ -108,16 +109,20 @@ def capture_titles(session: requests.Session, term: str, subject: str,
     model = {
         "term_cd": term,
         "subj_area_cd": subject,
-        "ses_grp_cd": "%",      # wildcard: any session group
-        "class_no": "%",        # wildcard: any class number
+        "ses_grp_cd": "%",  # wildcard: any session group
+        "class_no": "%",  # wildcard: any class number
         "crs_catlg_no": catalog_no,
     }
-    html = fetch(session, COURSE_TITLES_URL, {
-        "search_by": "subject",
-        "model": json.dumps(model),
-        "pageNumber": "1",
-        "filterFlags": "{}",
-    })
+    html = fetch(
+        session,
+        COURSE_TITLES_URL,
+        {
+            "search_by": "subject",
+            "model": json.dumps(model),
+            "pageNumber": "1",
+            "filterFlags": "{}",
+        },
+    )
     save("course_titles_sample.html", html)
 
     roots = extract_tokens(html, root=True)
@@ -128,10 +133,14 @@ def capture_titles(session: requests.Session, term: str, subject: str,
 
 def capture_summary(session: requests.Session, token: dict, filename: str) -> str:
     """GetCourseSummary for one token. Returns the HTML for further mining."""
-    html = fetch(session, COURSE_SUMMARY_URL, {
-        "model": json.dumps(token),
-        "FilterFlags": "{}",
-    })
+    html = fetch(
+        session,
+        COURSE_SUMMARY_URL,
+        {
+            "model": json.dumps(token),
+            "FilterFlags": "{}",
+        },
+    )
     save(filename, html)
     return html
 
@@ -141,8 +150,10 @@ def capture_summary(session: requests.Session, token: dict, filename: str) -> st
 
 def main() -> None:
     if len(sys.argv) != 4:
-        sys.exit(f"usage: {sys.argv[0]} TERM SUBJECT CATALOG_NO\n"
-                 f'example: {sys.argv[0]} 26F "COM SCI" 0111')
+        sys.exit(
+            f"usage: {sys.argv[0]} TERM SUBJECT CATALOG_NO\n"
+            f'example: {sys.argv[0]} 26F "COM SCI" 0111'
+        )
     term, subject, catalog_no = sys.argv[1:4]
 
     FIXTURES_DIR.mkdir(exist_ok=True)
@@ -153,13 +164,11 @@ def main() -> None:
     root_token = capture_titles(session, term, subject, catalog_no)
 
     # Lecture level, then the sub-level (labs/discussions) it points to.
-    summary_html = capture_summary(session, root_token,
-                                   "course_summary_sample.html")
+    summary_html = capture_summary(session, root_token, "course_summary_sample.html")
 
     sub_tokens = extract_tokens(summary_html, root=False)
     if sub_tokens:
-        capture_summary(session, sub_tokens[0],
-                        "course_summary_sub_sample.html")
+        capture_summary(session, sub_tokens[0], "course_summary_sub_sample.html")
     else:
         print("  (no sub-level sections for this course)")
 

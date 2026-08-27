@@ -5,12 +5,12 @@ here exercises logic that lives in exactly one place in the codebase --
 the seat arithmetic and the definition of "open".
 """
 
+from dataclasses import FrozenInstanceError
 from datetime import datetime
 
 import pytest
 
 from bruinwatch.models import Course, CourseSnapshot, SectionKind, SectionStatus
-
 
 # --- Helpers -----------------------------------------------------------------
 #
@@ -162,11 +162,11 @@ def test_open_sections_preserves_order_and_filters():
 
 def test_section_status_is_frozen():
     section = make_section()
-    with pytest.raises(Exception):
+    with pytest.raises(FrozenInstanceError):
         section.enrolled = 99
 
 
 def test_course_snapshot_is_frozen():
     snapshot = make_snapshot(make_section())
-    with pytest.raises(Exception):
+    with pytest.raises(FrozenInstanceError):
         snapshot.course = None

@@ -21,13 +21,13 @@ class SectionStatus:
     """Enrollment state of a single section at one point in time."""
 
     section_id: str
-    label: str          # UCLA's display label, e.g. "Lec 1", "Dis 1A"
+    label: str  # UCLA's display label, e.g. "Lec 1", "Dis 1A"
     kind: SectionKind
     enrolled: int
     capacity: int
     waitlisted: int
-    waitlist_capacity: int | None   # None = no waitlist exists for this section
-    status_text: str            # UCLA's raw label: "Open", "Closed", ...
+    waitlist_capacity: int | None  # None = no waitlist exists for this section
+    status_text: str  # UCLA's raw label: "Open", "Closed", ...
 
     @property
     def seats_available(self) -> int:
@@ -50,10 +50,10 @@ class SectionStatus:
 class Course:
     """A course the user wants to watch."""
 
-    subject_area: str           # "COM SCI"
-    catalog_number: str         # "111" — as typed, not zero-padded
-    model_token: dict | None = None   # opaque token from CourseTitlesView
-    title: str | None = None          # resolved from CourseTitlesView
+    subject_area: str  # "COM SCI"
+    catalog_number: str  # "111" — as typed, not zero-padded
+    model_token: dict | None = None  # opaque token from CourseTitlesView
+    title: str | None = None  # resolved from CourseTitlesView
 
     @property
     def display_name(self) -> str:
