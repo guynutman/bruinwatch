@@ -87,6 +87,14 @@ class Watcher:
         Blocks until interrupted. Catches KeyboardInterrupt so Ctrl+C is a
         clean exit rather than a traceback.
         """
+        try:
+            while True:
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                print(f"\n[{timestamp}] Polling {len(self._courses)} course(s)...")
+                self.poll_once()
+                time.sleep(self._poll_interval)
+        except KeyboardInterrupt:
+            print("\nStopped.")
 
     def _snapshot_course(self, course: Course) -> CourseSnapshot:
         """Fetch and parse one course into a snapshot.
