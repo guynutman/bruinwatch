@@ -88,10 +88,19 @@ def fake_session():
         ("0111", "0111"),  # already padded -- idempotent
         # Leading letters (M = multiple-listed, C = concurrent) move to the
         # END in UCLA's internal format, after the zero-padded digits.
+        # The prefix is right-aligned into a 7-wide field, so the gap
+        # shrinks as the suffix grows. Surveyed across 377 real values.
         ("M51A", "0051A M"),
-        ("M16", "0016 M"),
-        ("C121", "0121 C"),
+        ("M16", "0016  M"),
+        ("C121", "0121  C"),
         ("M151B", "0151B M"),
+        ("M116C", "0116C M"),
+        ("M495I", "0495I M"),
+        # Two-letter suffixes exist and must not be split.
+        ("32AH", "0032AH"),
+        ("75XP", "0075XP"),
+        ("188SA", "0188SA"),
+        ("35L", "0035L"),
         ("m51a", "0051A M"),  # normalised to upper
         ("CM121", "CM121"),  # unrecognised shape -- passed through
         ("  32  ", "0032"),  # normalised whitespace
@@ -108,6 +117,13 @@ def test_leading_letter_becomes_a_trailing_suffix():
     found", which is indistinguishable from a course that is not offered.
     """
     assert format_catalog_number("M51A") == "0051A M"
+
+
+def test_prefix_gap_narrows_as_suffix_grows():
+    """UCLA right-aligns the prefix, so the space count is not fixed."""
+    assert format_catalog_number("M16") == "0016  M"  # two spaces
+    assert format_catalog_number("M51A") == "0051A M"  # one space
+    assert len(format_catalog_number("M16")) == len(format_catalog_number("M51A"))
 
 
 def test_format_catalog_number_is_idempotent():

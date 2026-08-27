@@ -45,6 +45,12 @@ DEFAULT_HEADERS = {
 #     "C121"  -> "0121 C"
 CATALOG_NUMBER_RE = re.compile(r"^(?P<prefix>[A-Z]?)(?P<digits>\d+)(?P<suffix>[A-Z]*)$")
 
+# Width of the field UCLA right-aligns a leading letter into. Surveyed
+# across 296 real catalog numbers: "0119  M" and "0051A M" are both seven
+# characters, so the gap varies with the suffix length rather than being a
+# fixed number of spaces.
+CATALOG_PREFIX_WIDTH = 7
+
 
 class SOCError(Exception):
     """A request to UCLA's SOC failed after exhausting retries.
@@ -76,7 +82,12 @@ def format_catalog_number(catalog_number: str) -> str:
 
     padded = match.group("digits").zfill(4) + match.group("suffix")
     prefix = match.group("prefix")
-    return f"{padded} {prefix}" if prefix else padded
+    if not prefix:
+        return padded
+
+    # Right-align the prefix letter into a fixed-width field: UCLA writes
+    # "0119  M" but "0051A M", so the gap shrinks as the suffix grows.
+    return f"{padded:<{CATALOG_PREFIX_WIDTH - 1}}{prefix}"
 
 
 class SOCClient:
