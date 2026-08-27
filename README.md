@@ -1,5 +1,7 @@
 # BruinWatch
 
+[![CI](https://github.com/guynutman/bruinwatch/actions/workflows/ci.yml/badge.svg)](https://github.com/guynutman/bruinwatch/actions/workflows/ci.yml)
+
 Monitors UCLA's [Schedule of Classes](https://sa.ucla.edu/ro/Public/SOC) for
 open seats and alerts you when one appears.
 
@@ -16,7 +18,7 @@ of the project.
 ## Install
 
 ```bash
-git clone https://github.com/<you>/bruinwatch.git
+git clone https://github.com/guynutman/bruinwatch.git
 cd bruinwatch
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[notify,dev]"
@@ -25,17 +27,28 @@ pip install -e ".[notify,dev]"
 ## Run
 
 ```bash
-bruinwatch                       # or: python -m bruinwatch.bruinwatch
+bruinwatch                       # interactive: prompts for term and courses
 ```
 
 It asks for a term, then one or more courses, then polls every three
 minutes until you press Ctrl+C. Desktop notifications need `plyer`; without
 it, alerts still print and still make a sound.
 
+Every prompt has a flag, so it is equally usable from a script or a cron
+entry:
+
+```bash
+bruinwatch -t 26F -c "COM SCI M51A"              # skip the prompts
+bruinwatch -t 26F -c "MATH 61" -c "COM SCI 111"  # several courses
+bruinwatch -t 26F -c "COM SCI 111" --once        # one poll, then exit
+bruinwatch -t 26F -c "COM SCI 111" -q -i 300     # alerts only, every 5 min
+bruinwatch --help
+```
+
 ## Tests
 
 ```bash
-pytest        # 123 tests, ~0.3s, no network
+pytest        # 153 tests, ~0.2s, no network
 ruff check .
 ```
 
