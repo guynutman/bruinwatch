@@ -15,7 +15,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from bruinwatch import parser
-from bruinwatch.client import SOCClient
+from bruinwatch.client import SOCClient, SOCError
 from bruinwatch.models import Course, CourseSnapshot, SectionStatus
 
 DEFAULT_POLL_INTERVAL = 180
@@ -44,6 +44,14 @@ class Watcher:
         A None notify means "poll but stay quiet", which is what makes the
         watcher usable in tests and dry runs.
         """
+        self._client = client
+        self._courses = courses
+        self._notify = notify
+        self._poll_interval = poll_interval
+
+        # section_id -> was it open last poll? Empty on the first cycle, so
+        # every open section counts as newly open and alerts once.
+        self._previously_open: dict[str, bool] = {}
 
     def poll_once(self) -> list[CourseSnapshot]:
         """Fetch every watched course and fire notifications for new opens.
@@ -52,6 +60,26 @@ class Watcher:
         request fails is skipped rather than aborting the whole cycle: one
         flaky endpoint should not silence the others.
         """
+        snapshots: list[CourseSnapshot] = []
+
+        for course in self._courses:
+            try:
+                snapshot = self._snapshot_course(course)
+            except SOCError as exc:
+                print(f"  [!] {course.display_name}: fetch failed ({exc})")
+                continue
+
+            snapshots.append(snapshot)
+
+            for section in self._newly_open(snapshot):
+                if self._notify is not None:
+                    self._notify(
+                        course.display_name,
+                        section.seats_available,
+                        section.label,
+                    )
+
+        return snapshots
 
     def run(self) -> None:
         """Poll forever, sleeping poll_interval between cycles.
@@ -66,6 +94,19 @@ class Watcher:
         Walks both levels: the root token yields lectures, and each
         lecture's sub token yields its discussions or labs.
         """
+        summary_html = self._client.fetch_course_summary(course.model_token)
+        sections = parser.parse_sections(summary_html)
+
+        # Each lecture carries a sub token for its own discussions/labs.
+        for sub_token in parser.parse_sub_tokens(summary_html):
+            sub_html = self._client.fetch_course_summary(sub_token)
+            sections.extend(parser.parse_sections(sub_html))
+
+        return CourseSnapshot(
+            course=course,
+            sections=tuple(sections),
+            fetched_at=datetime.now(),
+        )
 
     def _newly_open(self, snapshot: CourseSnapshot) -> list[SectionStatus]:
         """Sections open now that were not open on the previous poll.
@@ -74,3 +115,15 @@ class Watcher:
         closed or absent last time -- which is what stops a section that
         stays open from re-alerting on every cycle.
         """
+        newly_open = [
+            section
+            for section in snapshot.sections
+            if section.is_open and not self._previously_open.get(section.section_id)
+        ]
+
+        # Record current state only after the comparison, or every section
+        # would look unchanged.
+        for section in snapshot.sections:
+            self._previously_open[section.section_id] = section.is_open
+
+        return newly_open

@@ -40,6 +40,15 @@ DEFAULT_HEADERS = {
 CATALOG_NUMBER_RE = re.compile(r"^(?P<digits>\d+)(?P<suffix>.*)$")
 
 
+class SOCError(Exception):
+    """A request to UCLA's SOC failed after exhausting retries.
+
+    Exists so callers can handle transport failure without importing
+    requests: watcher.py should not need to know that this module
+    speaks HTTP. The underlying error is kept as __cause__.
+    """
+
+
 def format_catalog_number(catalog_number: str) -> str:
     """Zero-pad a catalog number the way UCLA's API expects.
 
@@ -68,7 +77,7 @@ class SOCClient:
     def __init__(self, *, timeout: int = DEFAULT_TIMEOUT) -> None:
         """Create the session, set browser headers, and collect cookies.
 
-        Raises requests.RequestException if the landing page is unreachable.
+        Raises SOCError if the landing page is unreachable.
         """
         self._timeout = timeout
         self._session = requests.Session()
@@ -81,7 +90,7 @@ class SOCClient:
     def fetch_terms_page(self) -> str:
         """GET the SOC landing page. Returns raw HTML.
 
-        Raises requests.RequestException if all retries fail.
+        Raises SOCError if all retries fail.
         """
         return self._get_with_retry(SOC_URL, {})
 
@@ -91,7 +100,7 @@ class SOCClient:
         """Call CourseTitlesView for one course. Returns raw HTML.
 
         Zero-pads the catalog number internally, so callers pass what the
-        user typed. Raises requests.RequestException if all retries fail.
+        user typed. Raises SOCError if all retries fail.
         """
         model = {
             "term_cd": term_cd,
@@ -115,7 +124,7 @@ class SOCClient:
 
         The token is opaque -- handed back to UCLA verbatim. Works for both
         root tokens (lectures) and sub tokens (discussions/labs). Returns
-        raw HTML. Raises requests.RequestException if all retries fail.
+        raw HTML. Raises SOCError if all retries fail.
         """
         return self._get_with_retry(
             COURSE_SUMMARY_URL, {"model": json.dumps(model_token), "FilterFlags": "{}"}
@@ -142,5 +151,4 @@ class SOCClient:
                 if attempt < MAX_RETRIES:
                     time.sleep(RETRY_DELAY)
 
-        assert last_error is not None
-        raise last_error
+        raise SOCError(f"GET {url} failed after {MAX_RETRIES} attempts") from last_error
