@@ -149,6 +149,7 @@ def capture_summary(session: requests.Session, token: dict, filename: str) -> st
 
 
 def main() -> None:
+    """Capture all four fixtures for one course, in endpoint order."""
     if len(sys.argv) != 4:
         sys.exit(
             f"usage: {sys.argv[0]} TERM SUBJECT CATALOG_NO\n"
