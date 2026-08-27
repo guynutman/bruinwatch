@@ -9,6 +9,7 @@ __main__ guard. Keeping those here is what lets the rest of the package be
 tested with no terminal, no display, and no sound device.
 """
 
+import argparse
 import contextlib
 import platform
 import subprocess
@@ -55,6 +56,12 @@ RESET = "\033[0m" if _USE_COLOUR else ""
 def colour(text: str, code: str) -> str:
     """Wrap text in an ANSI colour, or return it unchanged when piped."""
     return f"{code}{text}{RESET}" if code else text
+
+
+def _disable_colour() -> None:
+    """Blank the colour codes, for --no-colour."""
+    global GREEN, RED, DIM, RESET
+    GREEN = RED = DIM = RESET = ""
 
 
 def build_notify_callback() -> NotifyCallback:
@@ -236,8 +243,109 @@ def _resolve_course(
     )
 
 
-def main() -> None:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse command-line arguments.
+
+    Every option has an interactive fallback, so the tool stays usable
+    with no flags at all while also being scriptable and cron-able.
+    """
+    parser_ = argparse.ArgumentParser(
+        prog="bruinwatch",
+        description="Monitor UCLA's Schedule of Classes for open seats.",
+        epilog=(
+            "examples:\n"
+            "  bruinwatch\n"
+            '  bruinwatch --term 26F --course "COM SCI M51A"\n'
+            '  bruinwatch -t 26F -c "MATH 61" -c "COM SCI 111" --interval 300\n'
+            "  bruinwatch -t 26F -c 'COM SCI 111' --once\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser_.add_argument(
+        "-t",
+        "--term",
+        metavar="CODE",
+        help="term code, e.g. 26F (prompts if omitted)",
+    )
+    parser_.add_argument(
+        "-c",
+        "--course",
+        action="append",
+        metavar="NAME",
+        dest="courses",
+        help='course to watch, e.g. "COM SCI M51A" (repeatable; prompts if omitted)',
+    )
+    parser_.add_argument(
+        "-i",
+        "--interval",
+        type=int,
+        default=DEFAULT_POLL_INTERVAL,
+        metavar="SEC",
+        help=f"seconds between polls (default: {DEFAULT_POLL_INTERVAL})",
+    )
+    parser_.add_argument(
+        "--once",
+        action="store_true",
+        help="poll a single time and exit, instead of looping",
+    )
+    parser_.add_argument(
+        "--no-colour",
+        "--no-color",
+        action="store_true",
+        dest="no_colour",
+        help="disable ANSI colour even when attached to a terminal",
+    )
+    parser_.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="suppress the per-poll status table; show alerts only",
+    )
+    return parser_.parse_args(argv)
+
+
+def split_course_argument(raw: str) -> tuple[str, str] | None:
+    """Split "COM SCI M51A" into ("COM SCI", "M51A").
+
+    The catalog number is the last whitespace-separated token, because
+    subject areas themselves contain spaces. Returns None if the argument
+    has no separator to split on.
+    """
+    parts = raw.strip().rsplit(maxsplit=1)
+    if len(parts) != 2:
+        return None
+    return parts[0].upper(), parts[1].upper()
+
+
+def resolve_courses(client: SOCClient, term_cd: str, specs: list[str]) -> list[Course]:
+    """Resolve --course arguments, exiting if any of them fails.
+
+    Non-interactive callers get a hard failure rather than a silent
+    watchlist that is missing entries they asked for.
+    """
+    courses: list[Course] = []
+
+    for spec in specs:
+        split = split_course_argument(spec)
+        if split is None:
+            sys.exit(f'Could not parse course {spec!r}. Expected e.g. "COM SCI 111".')
+
+        subject, catalog_number = split
+        course = _resolve_course(client, term_cd, subject, catalog_number)
+        if course is None:
+            sys.exit(f"Could not find {subject} {catalog_number} in term {term_cd}.")
+        courses.append(course)
+
+    return courses
+
+
+def main(argv: list[str] | None = None) -> None:
     """Wire the modules together and hand control to the watcher."""
+    args = parse_args(argv)
+
+    if args.no_colour:
+        _disable_colour()
+
     print("=" * 60)
     print("  BruinWatch - UCLA course seat monitor")
     print("=" * 60)
@@ -252,25 +360,39 @@ def main() -> None:
         # user instead of dumping a traceback.
         sys.exit(f"Could not open a session with UCLA SOC: {exc}")
 
-    term_cd, term_name = choose_term(client)
+    # Each option falls back to a prompt, so the tool works with no flags
+    # at all and equally well fully specified from a cron entry.
+    if args.term:
+        term_cd, term_name = args.term.upper(), args.term.upper()
+    else:
+        term_cd, term_name = choose_term(client)
     print(f"\nWatching {term_name} ({term_cd}).")
 
-    courses = choose_courses(client, term_cd)
+    if args.courses:
+        courses = resolve_courses(client, term_cd, args.courses)
+    else:
+        courses = choose_courses(client, term_cd)
 
-    minutes = DEFAULT_POLL_INTERVAL // 60
-    print(f"\n{'-' * 60}")
-    print(f"  Monitoring {len(courses)} course(s), every {minutes} minute(s).")
-    for course in courses:
-        print(f"    - {course.display_name}: {course.title}")
-    print(colour("  Press Ctrl+C at any time to stop monitoring.", DIM))
-    print(f"{'-' * 60}")
-
-    Watcher(
+    watcher = Watcher(
         client,
         courses,
         notify=build_notify_callback(),
-        report=build_report_callback(),
-    ).run()
+        poll_interval=args.interval,
+        report=None if args.quiet else build_report_callback(),
+    )
+
+    print(f"\n{'-' * 60}")
+    print(f"  Monitoring {len(courses)} course(s), every {args.interval}s.")
+    for course in courses:
+        print(f"    - {course.display_name}: {course.title}")
+    if not args.once:
+        print(colour("  Press Ctrl+C at any time to stop monitoring.", DIM))
+    print(f"{'-' * 60}")
+
+    if args.once:
+        watcher.poll_once()
+    else:
+        watcher.run()
 
 
 if __name__ == "__main__":
